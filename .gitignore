@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+. Python
+env/
+venv/
+. venv/
+.uv/
+
+# Environment variables
+.env
+.env.local
+
+# IDEs
+.vscode/
+. idea/
+*.swp
+*. swo
+
+# Database
+*.db
+*.sqlite3
+
+# Alembic
+alembic/versions/*. pyc
+
+# OS
+.DS_Store
+Thumbs.db
+
+# uv
+. python-version
+uv.lock
