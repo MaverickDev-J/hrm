@@ -8,6 +8,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
+from app.core.dependencies import get_current_user
 from app.schemas.auth import Token, RefreshRequest, LoginRequest
 from app.schemas.user import UserCreate, UserResponse
 from app.services.auth_service import (
@@ -151,8 +152,24 @@ async def register_superuser(
             is_superuser=user_data.is_superuser,
         )
         return UserResponse.model_validate(user)
+
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    summary="Get current user",
+    description="Retrieve the currently authenticated user."
+)
+async def read_users_me(
+    current_user: Annotated[UserResponse, Depends(get_current_user)]
+) -> UserResponse:
+    """
+    Get current user.
+    """
+    return current_user
