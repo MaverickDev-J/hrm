@@ -1,32 +1,20 @@
-version: "3.8"
-
 services:
   postgres:
     image: postgres:15-alpine
     container_name: hr_postgres
-    restart: unless-stopped
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin123
-      POSTGRES_DB: hr_db
-      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_USER: hruser
+      POSTGRES_PASSWORD: hrpass123
+      POSTGRES_DB: hr_management_db
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d hr_db"]
+      test: ["CMD-SHELL", "pg_isready -U hruser -d hr_management_db"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
-    networks:
-      - hr_network
 
 volumes:
   postgres_data:
-    driver: local
-
-networks:
-  hr_network:
-    driver: bridge
