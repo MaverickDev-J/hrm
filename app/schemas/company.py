@@ -50,6 +50,12 @@ class CompanyUpdate(BaseModel):
     ifsc_code: Optional[str] = Field(None, pattern=r'^[A-Z]{4}0[A-Z0-9]{6}$')
     bank_pan: Optional[str] = Field(None, pattern=r'^[A-Z]{5}[0-9]{4}[A-Z]{1}$')
 
+    # Branding
+    logo_url: Optional[str] = None
+    banner_image_url: Optional[str] = None
+    signature_url: Optional[str] = None
+    stamp_url: Optional[str] = None
+
 
 class CompanyResponse(CompanyBase):
     """Schema for company responses."""
