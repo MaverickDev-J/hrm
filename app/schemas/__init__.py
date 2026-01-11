@@ -32,6 +32,14 @@ from app.schemas.auth import (
     PasswordChange,
     PasswordReset,
 )
+from app.schemas.client import (
+    ClientBase,
+    ClientCreate,
+    ClientUpdate,
+    ClientResponse,
+    ClientListResponse,
+)
+from app.schemas.company import CompanyProfileStatus
 
 
 __all__ = [
@@ -62,4 +70,12 @@ __all__ = [
     "RefreshRequest",
     "PasswordChange",
     "PasswordReset",
+    # Client
+    "ClientBase",
+    "ClientCreate",
+    "ClientUpdate",
+    "ClientResponse",
+    "ClientListResponse",
+    # Company Profile
+    "CompanyProfileStatus",
 ]

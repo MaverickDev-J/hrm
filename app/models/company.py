@@ -1,7 +1,8 @@
 import uuid
+from typing import List, Optional
 from datetime import datetime
 
-from sqlalchemy import Boolean, String, DateTime
+from sqlalchemy import Boolean, String, DateTime, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -31,6 +32,26 @@ class Company(Base):
         comment="Unique subdomain for tenant identification (e.g., 'acme' for acme.app. com)"
     )
     
+    # Business Details
+    registered_address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    city: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    state: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    pincode: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    pan_number: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+
+    # Bank Details
+    bank_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    account_holder_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    account_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    ifsc_code: Mapped[Optional[str]] = mapped_column(String(11), nullable=True)
+    bank_pan: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+
+    # Branding
+    banner_image_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    logo_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    signature_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    stamp_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
     # Status
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     
@@ -56,6 +77,12 @@ class Company(Base):
     
     roles: Mapped[list["Role"]] = relationship(
         "Role",
+        back_populates="company",
+        cascade="all, delete-orphan"
+    )
+
+    clients: Mapped[list["Client"]] = relationship(
+        "Client",
         back_populates="company",
         cascade="all, delete-orphan"
     )

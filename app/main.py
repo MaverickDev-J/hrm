@@ -1,3 +1,4 @@
+# Trigger Reload
 from fastapi import FastAPI
 from app.core.config import settings
 from app.api.v1.router import api_router
@@ -10,7 +11,14 @@ app = FastAPI(
 )
 
 # Include API routers
+# Include API routers
 app.include_router(api_router)
+
+# Mount static files
+from fastapi.staticfiles import StaticFiles
+import os
+os.makedirs("static/uploads", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 @app.get("/")

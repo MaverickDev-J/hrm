@@ -35,6 +35,20 @@ class CompanyUpdate(BaseModel):
         pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$"
     )
     is_active: Optional[bool] = None
+    
+    # Business Details
+    registered_address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = Field(None, pattern=r'^\d{6}$')
+    pan_number: Optional[str] = Field(None, pattern=r'^[A-Z]{5}[0-9]{4}[A-Z]{1}$')
+    
+    # Bank Details
+    bank_name: Optional[str] = None
+    account_holder_name: Optional[str] = None
+    account_number: Optional[str] = None
+    ifsc_code: Optional[str] = Field(None, pattern=r'^[A-Z]{4}0[A-Z0-9]{6}$')
+    bank_pan: Optional[str] = Field(None, pattern=r'^[A-Z]{5}[0-9]{4}[A-Z]{1}$')
 
 
 class CompanyResponse(CompanyBase):
@@ -43,8 +57,35 @@ class CompanyResponse(CompanyBase):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    
+    # Business Details
+    registered_address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
+    pan_number: Optional[str] = None
+    
+    # Bank Details
+    bank_name: Optional[str] = None
+    account_holder_name: Optional[str] = None
+    account_number: Optional[str] = None
+    ifsc_code: Optional[str] = None
+    bank_pan: Optional[str] = None
+    
+    # Branding
+    logo_url: Optional[str] = None
+    banner_image_url: Optional[str] = None
+    signature_url: Optional[str] = None
+    stamp_url: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class CompanyProfileStatus(BaseModel):
+    """Schema for company profile completeness status."""
+    is_complete: bool
+    missing_required_fields: list[str]
+    missing_optional_fields: list[str]
 
 
 class CompanyInDB(CompanyResponse):

@@ -64,3 +64,54 @@ def create_company(db: Session, company_in: CompanyCreate) -> Company:
     db.refresh(db_company)
     
     return db_company
+
+
+def update_company(db: Session, db_company: Company, company_in: CompanyUpdate) -> Company:
+    """
+    Update company details.
+    """
+    # Check subdomain uniqueness if changing
+    if company_in.subdomain and company_in.subdomain != db_company.subdomain:
+        if get_company_by_subdomain(db, company_in.subdomain):
+            raise SubdomainAlreadyExistsError(f"Subdomain '{company_in.subdomain}' is already taken")
+            
+    update_data = company_in.model_dump(exclude_unset=True)
+    
+    for field, value in update_data.items():
+        setattr(db_company, field, value)
+
+    db.add(db_company)
+    db.commit()
+    db.refresh(db_company)
+    return db_company
+
+
+def check_profile_completeness(company: Company) -> dict:
+    """
+    Check if company profile is complete.
+    Returns dict for CompanyProfileStatus schema.
+    """
+    required_fields = [
+        "registered_address", "city", "state", "pincode", "pan_number",
+        "bank_name", "account_holder_name", "account_number", "ifsc_code", "bank_pan"
+    ]
+    
+    optional_fields = [
+        "logo_url", "banner_image_url", "signature_url", "stamp_url"
+    ]
+    
+    missing_required = []
+    for field in required_fields:
+        if not getattr(company, field):
+            missing_required.append(field)
+            
+    missing_optional = []
+    for field in optional_fields:
+        if not getattr(company, field):
+            missing_optional.append(field)
+            
+    return {
+        "is_complete": len(missing_required) == 0,
+        "missing_required_fields": missing_required,
+        "missing_optional_fields": missing_optional
+    }
