@@ -6,15 +6,16 @@ sys.path.append(os.getcwd())
 from fastapi.testclient import TestClient
 from app.main import app
 from app.core.config import settings
-from app.utils.security import create_access_token
+from app.core.security import create_access_token
 from app.database.session import SessionLocal
 from app.models.user import User
 from app.models.company import Company
+from app.models.role import Role
 
 client = TestClient(app)
 
 def verify_invoice_flow():
-    print("🚀 Starting Invoice Generation Verification...")
+    print("Starting Invoice Generation Verification...")
     
     db = SessionLocal()
     
@@ -27,31 +28,41 @@ def verify_invoice_flow():
         # Ensure Company
         company = db.query(Company).filter(Company.name == "Test Company Inc").first()
         if not company:
-            company = Company(name="Test Company Inc", tenant_id="test-co", subdomain="testco")
+            company = Company(name="Test Company Inc", subdomain="testco")
             db.add(company)
             db.commit()
-            print("✅ Created Test Company")
+            print("Created Test Company")
         
+        # Ensure Role
+        role = db.query(Role).filter(Role.name == "Admin", Role.company_id == company.id).first()
+        if not role:
+            role = Role(name="Admin", company_id=company.id)
+            db.add(role)
+            db.commit()
+
         # Ensure User
         user = db.query(User).filter(User.email == email).first()
         if not user:
-            from app.core.security import get_password_hash
+            from app.core.security import hash_password
             user = User(
                 email=email,
-                hashed_password=get_password_hash(password),
+                hashed_password=hash_password(password),
                 full_name="Invoice Admin",
-                role_id=1, # Assuming 1 is Admin/Owner or valid role
                 company_id=company.id,
                 is_active=True
             )
+            user.roles.append(role)
             db.add(user)
             db.commit()
-            print("✅ Created Test Admin")
+            print("Created Test Admin")
         else:
-            print("ℹ️ Test Admin exists")
+             if not user.roles:
+                 user.roles.append(role)
+                 db.commit()
+             print("Test Admin exists")
 
         # Login
-        token = create_access_token(user.id)
+        token = create_access_token({"sub": str(user.id)})
         headers = {"Authorization": f"Bearer {token}"}
         
         # 2. Create Client
@@ -66,11 +77,11 @@ def verify_invoice_flow():
         }
         resp = client.post("/api/v1/clients/", json=client_data, headers=headers)
         if resp.status_code not in [200, 201]:
-             print(f"❌ Failed to create client: {resp.text}")
+             print(f"Failed to create client: {resp.text}")
              return
         
         client_id = resp.json()["id"]
-        print(f"✅ Created Client: {client_id}")
+        print(f"Created Client: {client_id}")
 
         # 3. Configure Columns
         config_data = {
@@ -82,9 +93,9 @@ def verify_invoice_flow():
         }
         resp = client.put(f"/api/v1/clients/{client_id}/config", json=config_data, headers=headers)
         if resp.status_code != 200:
-             print(f"❌ Failed to configure columns: {resp.text}")
+             print(f"Failed to configure columns: {resp.text}")
              return
-        print("✅ Configured Invoice Columns")
+        print("Configured Invoice Columns")
 
         # 4. Add Candidate
         candidate_data = {
@@ -97,11 +108,11 @@ def verify_invoice_flow():
         }
         resp = client.post(f"/api/v1/clients/{client_id}/candidates", json=candidate_data, headers=headers)
         if resp.status_code != 201:
-             print(f"❌ Failed to create candidate: {resp.text}")
+             print(f"Failed to create candidate: {resp.text}")
              return
         
         cand_id = resp.json()["id"]
-        print(f"✅ Added Candidate: {cand_id}")
+        print(f"Added Candidate: {cand_id}")
 
         # 5. Generate Invoice (Manual Totals)
         invoice_req = {
@@ -120,25 +131,45 @@ def verify_invoice_flow():
         
         resp = client.post("/api/v1/invoices/generate", json=invoice_req, headers=headers)
         if resp.status_code != 201:
-             print(f"❌ Invoice Generation Failed: {resp.text}")
+             print(f"Invoice Generation Failed: {resp.text}")
              return
         
         data = resp.json()
-        print(f"✅ Generated Invoice: {data['invoice_number']}")
-        print(f"📄 File URL: {data['file_url']}")
-        print(f"💰 Grand Total: {data['grand_total']} (Should be 9000.0, matching manual input)")
+        print(f"Generated Invoice: {data['invoice_number']}")
+        print(f"File URL: {data['file_url']}")
+        print(f"Grand Total: {data['grand_total']} (Should be 9000.0, matching manual input)")
 
         # Verify File Exists
-        # The URL is relative /static/invoices/...
-        # We check file system
         file_path = f".{data['file_url']}" # ./static/...
         if os.path.exists(file_path):
-             print("✅ DOCX File verified on disk")
+             print("DOCX File verified on disk")
         else:
-             print(f"❌ File missing at {file_path}")
+             print(f"File missing at {file_path}")
+
+        # 6. Verify GET Data Endpoint (Latest by Client)
+        print(f"Verifying GET /invoices/client/{client_id}/data ...")
+        resp = client.get(f"/api/v1/invoices/client/{client_id}/data", headers=headers)
+        if resp.status_code != 200:
+             print(f"Failed to get invoice data: {resp.text}")
+             # Don't return, let's see why
+        else:
+            invoice_data = resp.json()
+            print("Retrieved invoice data structure:")
+            print(f"- Invoice Number: {invoice_data.get('invoice_number')}")
+            print(f"- Company: {invoice_data.get('company', {}).get('name')}")
+            print(f"- Client: {invoice_data.get('client', {}).get('name')}")
+            print(f"- Line Items: {len(invoice_data.get('line_items', []))}")
+            print(f"- Financials: {invoice_data.get('financials', {}).get('grand_total')}")
+            
+            if invoice_data.get('financials', {}).get('grand_total') == 9000.0:
+                print("Financial data matches!")
+            else:
+                print("Financial data mismatch!")
 
     except Exception as e:
-        print(f"❌ Exception: {e}")
+        import traceback
+        traceback.print_exc()
+        print(f"Exception: {e}")
     finally:
         db.close()
 

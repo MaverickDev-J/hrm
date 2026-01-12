@@ -9,7 +9,7 @@ from app.core.dependencies import get_current_company_admin
 from app.models.user import User
 from app.models.client import Client
 from app.models.candidate import Candidate
-from app.schemas.invoice import InvoiceGenerateRequest, InvoiceResponse
+from app.schemas.invoice import InvoiceGenerateRequest, InvoiceResponse, InvoiceDataResponse
 from app.services.invoice_service import generate_invoice
 
 router = APIRouter(prefix="/invoices", tags=["Invoices"])
@@ -78,3 +78,34 @@ async def create_invoice(
     )
     
     return invoice
+
+@router.get(
+    "/client/{client_id}/data",
+    response_model=InvoiceDataResponse,
+    summary="Get Latest Invoice Data for Client",
+    description="Retrieve the complete data structure of the MOST RECENT invoice generated for the specified client."
+)
+async def get_client_latest_invoice_data(
+    client_id: UUID,
+    current_user: Annotated[User, Depends(get_current_company_admin)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """
+    Get detailed data for the client's latest invoice.
+    """
+    from app.services.invoice_service import get_latest_invoice_data_by_client_id
+    from app.models.client import Client
+    
+    # Check client existence and ownership
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+         raise HTTPException(status_code=404, detail="Client not found")
+         
+    if not current_user.is_superuser and client.company_id != current_user.company_id:
+        raise HTTPException(status_code=404, detail="Client not found") # Hide if unauthorized
+        
+    data = get_latest_invoice_data_by_client_id(db, client_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="No invoices found for this client")
+        
+    return data

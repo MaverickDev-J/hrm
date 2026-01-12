@@ -34,10 +34,14 @@ class Company(Base):
     
     # Business Details
     registered_address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    address_line1: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    address_line2: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     city: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     state: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     pincode: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     pan_number: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    pan: Mapped[Optional[str]] = mapped_column(String(10), nullable=True) # Alias or specific field requested
+    tagline: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     # Bank Details
     bank_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

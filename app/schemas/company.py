@@ -28,6 +28,7 @@ class CompanyCreate(CompanyBase):
 class CompanyUpdate(BaseModel):
     """Schema for updating company details."""
     name: Optional[str] = Field(None, min_length=2, max_length=255)
+    tagline: Optional[str] = Field(None, max_length=255)
     subdomain: Optional[str] = Field(
         None, 
         min_length=2, 
@@ -61,6 +62,7 @@ class CompanyResponse(CompanyBase):
     """Schema for company responses."""
     id: UUID
     is_active: bool
+    tagline: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     

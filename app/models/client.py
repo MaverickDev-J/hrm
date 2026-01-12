@@ -32,6 +32,7 @@ class Client(Base):
     # Client Details
     client_name: Mapped[str] = mapped_column(String(255), nullable=False)
     client_address: Mapped[str] = mapped_column(Text, nullable=False)
+    address_line2: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     city: Mapped[str] = mapped_column(String(100), nullable=False)
     state: Mapped[str] = mapped_column(String(100), nullable=False)
     pincode: Mapped[str] = mapped_column(String(10), nullable=False)
@@ -39,6 +40,7 @@ class Client(Base):
     # Tax Details
     gstin: Mapped[str] = mapped_column(String(15), nullable=False)
     pan_number: Mapped[str] = mapped_column(String(10), nullable=False)
+    pan: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     
     # Status
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)

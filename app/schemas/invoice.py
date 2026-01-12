@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 import uuid
 from datetime import date, datetime
 from pydantic import BaseModel, Field
@@ -30,3 +30,52 @@ class InvoiceResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# --- Detailed Data Response Schemas ---
+
+class InvoiceCompanyDetail(BaseModel):
+    name: str
+    tagline: Optional[str] = None
+    address_line1: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
+    pan: Optional[str] = None
+    banner_url: Optional[str] = None
+    stamp_url: Optional[str] = None
+    signature_url: Optional[str] = None
+    bank_name: Optional[str] = None
+    account_holder_name: Optional[str] = None
+    account_number: Optional[str] = None
+    ifsc_code: Optional[str] = None
+
+class InvoiceClientDetail(BaseModel):
+    name: str
+    address: str
+    address_line2: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
+    gstin: str
+    pan: Optional[str] = None
+
+class InvoiceColumnDef(BaseModel):
+    field_name: str
+    display_label: str
+    width: float
+
+class InvoiceLineItem(BaseModel):
+    serial_no: int
+    amount: float
+    # Allow extra dynamic fields from config
+    class Config:
+        extra = "allow" 
+
+class InvoiceDataResponse(BaseModel):
+    invoice_number: str
+    invoice_date: str
+    company: InvoiceCompanyDetail
+    client: InvoiceClientDetail
+    columns: List[InvoiceColumnDef]
+    line_items: List[Dict[str, Any]] # Using Dict to support dynamic columns easily
+    financials: ManualTotals
