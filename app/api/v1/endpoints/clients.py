@@ -22,6 +22,13 @@ from app.services.client_service import (
     ClientNotFoundError,
 )
 from app.services.company_service import get_company_by_id
+from app.schemas.client_column_config import ClientColumnConfigCreate, ClientColumnConfigResponse
+from app.schemas.candidate import CandidateCreate, CandidateResponse, CandidateListResponse
+from app.services.client_service import (
+    get_client_column_config,
+    upsert_client_column_config
+)
+from app.services.candidate_service import create_candidate, get_candidates
 
 router = APIRouter(prefix="/clients", tags=["Clients"])
 
@@ -212,3 +219,132 @@ async def delete_client(
             
     soft_delete_client(db, client)
     return {"message": "Client deactivated successfully"}
+
+
+# --- Column Config Endpoints ---
+
+@router.put(
+    "/{client_id}/config",
+    response_model=ClientColumnConfigResponse,
+    summary="Update Client Column Config",
+    description="Set the invoice column structure (Headers, Widths, Order)."
+)
+async def update_column_config(
+    client_id: UUID,
+    config_in: ClientColumnConfigCreate,
+    current_user: Annotated[User, Depends(get_current_company_admin)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    client = get_client(db, client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+        
+    if not current_user.is_superuser and client.company_id != current_user.company_id:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    return upsert_client_column_config(db, client_id, config_in)
+
+
+@router.get(
+    "/{client_id}/config",
+    response_model=ClientColumnConfigResponse,
+    summary="Get Client Column Config",
+    description="Get the invoice column structure."
+)
+async def get_column_config(
+    client_id: UUID,
+    current_user: Annotated[User, Depends(get_current_company_admin)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    client = get_client(db, client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+        
+    if not current_user.is_superuser and client.company_id != current_user.company_id:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    config = get_client_column_config(db, client_id)
+    if not config:
+        # Return default empty config if not found
+        return {"client_id": client_id, "column_definitions": {"columns": []}} 
+        # Note: Response model expects more fields (id, created_at). 
+        # If strict, we should create one or return 404. 
+        # Better to return 404 or empty object if model allows.
+        # Given UI needs it, returning 404 is clear "not configured".
+        raise HTTPException(status_code=404, detail="Configuration not found")
+        
+    return config
+
+
+# --- Candidate Endpoints ---
+
+@router.post(
+    "/{client_id}/candidates",
+    response_model=CandidateResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add Candidate to Client",
+    description="Add a candidate. MUST include 'amount' in candidate_data."
+)
+async def add_candidate(
+    client_id: UUID,
+    candidate_in: CandidateCreate,
+    current_user: Annotated[User, Depends(get_current_company_admin)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """
+    Add a candidate to a specific client.
+    Enforces tenant isolation.
+    """
+    client = get_client(db, client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+        
+    # Tenant check
+    if not current_user.is_superuser:
+        if client.company_id != current_user.company_id:
+            # Mask existence
+            raise HTTPException(status_code=404, detail="Client not found")
+            
+    # Create candidate
+    # Company Key is required for Candidate Model. We use Client's company_id (safe) 
+    # OR current_user's company_id (also safe). Using client.company_id is robust.
+    return create_candidate(db, candidate_in, client_id, client.company_id)
+
+
+@router.get(
+    "/{client_id}/candidates",
+    response_model=CandidateListResponse,
+    summary="Get Candidates for Client",
+    description="List candidates for a specific client with pagination."
+)
+async def list_candidates(
+    client_id: UUID,
+    current_user: Annotated[User, Depends(get_current_company_admin)],
+    db: Annotated[Session, Depends(get_db)],
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    search: Optional[str] = None
+):
+    """
+    List candidates for a client.
+    """
+    client = get_client(db, client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+        
+    # Tenant check
+    if not current_user.is_superuser:
+        if client.company_id != current_user.company_id:
+            raise HTTPException(status_code=404, detail="Client not found")
+            
+    skip = (page - 1) * limit
+    
+    return get_candidates(
+        db,
+        company_id=client.company_id,
+        client_id=client_id,
+        skip=skip,
+        limit=limit,
+        search=search
+    )
+

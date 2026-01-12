@@ -5,8 +5,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from app.models.client import Client
+from app.models.client_column_config import ClientColumnConfig
 from app.models.user import User
 from app.schemas.client import ClientCreate, ClientUpdate
+from app.schemas.client_column_config import ClientColumnConfigCreate, ClientColumnConfigUpdate
 
 
 class ClientServiceError(Exception):
@@ -102,3 +104,36 @@ def soft_delete_client(db: Session, db_client: Client) -> Client:
     db.commit()
     db.refresh(db_client)
     return db_client
+
+
+def get_client_column_config(db: Session, client_id: UUID) -> Optional[ClientColumnConfig]:
+    """
+    Get column configuration for a specific client.
+    """
+    return db.query(ClientColumnConfig).filter(ClientColumnConfig.client_id == client_id).first()
+
+
+def upsert_client_column_config(
+    db: Session, 
+    client_id: UUID, 
+    config_in: ClientColumnConfigCreate
+) -> ClientColumnConfig:
+    """
+    Create or update column configuration for a client.
+    """
+    db_config = get_client_column_config(db, client_id)
+    
+    if db_config:
+        # Update existing
+        db_config.column_definitions = config_in.model_dump(mode='json')
+    else:
+        # Create new
+        db_config = ClientColumnConfig(
+            client_id=client_id,
+            column_definitions=config_in.model_dump(mode='json')
+        )
+        db.add(db_config)
+    
+    db.commit()
+    db.refresh(db_config)
+    return db_config
