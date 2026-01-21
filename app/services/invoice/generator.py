@@ -1,15 +1,16 @@
 import os
-from datetime import datetime, date
+from datetime import date
 from uuid import UUID
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, List
+
+from io import BytesIO
+from PIL import Image
 
 from sqlalchemy.orm import Session
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
-from docx.oxml.ns import qn
-from docx.oxml import OxmlElement
 
 from app.models.invoice import Invoice
 from app.models.client import Client
@@ -18,51 +19,44 @@ from app.models.candidate import Candidate
 from app.services.client_service import get_client_column_config
 from app.schemas.invoice import ManualTotals
 
-# Paths
-STATIC_DIR = "static"
-INVOICE_DIR = os.path.join(STATIC_DIR, "invoices")
-os.makedirs(INVOICE_DIR, exist_ok=True)
+# Import from sibling modules
+from .docx_helpers import (
+    add_border_to_table,
+    set_cell_background,
+    set_cell_vertical_alignment,
+    set_repeat_table_header,
+)
+from .files import normalize_file_path, get_invoice_file_path
 
-# --- Helper Functions ---
-def add_border_to_table(table, border_size='4'):
-    """Add borders to table"""
-    tbl = table._element
-    tblPr = tbl.tblPr
-    if tblPr is None:
-        tblPr = OxmlElement('w:tblPr')
-        tbl.insert(0, tblPr)
-    
-    tblBorders = OxmlElement('w:tblBorders')
-    for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
-        border = OxmlElement(f'w:{border_name}')
-        border.set(qn('w:val'), 'single')
-        border.set(qn('w:sz'), border_size)
-        border.set(qn('w:space'), '0')
-        border.set(qn('w:color'), '000000')
-        tblBorders.append(border)
-    tblPr.append(tblBorders)
 
-def set_cell_background(cell, color):
-    """Set cell background color"""
-    shading = OxmlElement('w:shd')
-    shading.set(qn('w:fill'), color)
-    cell._element.get_or_add_tcPr().append(shading)
 
-def set_cell_vertical_alignment(cell, align="center"):
-    """Set vertical alignment for cell"""
-    tc = cell._element
-    tcPr = tc.get_or_add_tcPr()
-    vAlign = OxmlElement('w:vAlign')
-    vAlign.set(qn('w:val'), align)
-    tcPr.append(vAlign)
+def add_image_safe(paragraph, image_path:  str, width:  Inches, height: Inches = None):
+    """
+    Safely add image to paragraph, converting JPG/JPEG to PNG in memory.
+    Handles corrupted headers and format issues.
+    """
+    try:
+        # Open with Pillow (handles any format + fixes headers)
+        img = Image.open(image_path)
+        
+        # Convert RGBA to RGB if needed (for JPEG compatibility)
+        if img.mode == 'RGBA':
+            img = img.convert('RGB')
+        
+        # Save to BytesIO as PNG (in memory, no disk writes)
+        img_bytes = BytesIO()
+        img.save(img_bytes, format='PNG')
+        img_bytes.seek(0)
+        
+        # Add to document from memory
+        if height: 
+            paragraph.add_run().add_picture(img_bytes, width=width, height=height)
+        else:
+            paragraph. add_run().add_picture(img_bytes, width=width)
+            
+    except Exception as e: 
+        print(f"Could not add image {image_path}: {e}")
 
-def set_repeat_table_header(row):
-    """Set table row to repeat as header on new pages"""
-    tr = row._element
-    trPr = tr.get_or_add_trPr()
-    tblHeader = OxmlElement('w:tblHeader')
-    tblHeader.set(qn('w:val'), "true")
-    trPr.append(tblHeader)
 
 class InvoiceGenerator:
     def __init__(self, db: Session):
@@ -192,15 +186,7 @@ class InvoiceGenerator:
             section.right_margin = Inches(0.6)
         
         # --- ADD BANNER IMAGE ---
-        banner_path = data["company"].get("banner_url")
-        # Ensure path is relative to current working directory if it starts with /
-        if banner_path and banner_path.startswith("/"):
-            # Remove leading slash to join correctly with current dir
-            # Assuming banner_path is like "/static/..." and we run from root
-            banner_path = banner_path.lstrip("/")
-            if not os.path.exists(banner_path):
-                 # Try relative dot if needed, though lstrip usually enough for relative join
-                 banner_path = "./" + banner_path
+        banner_path = normalize_file_path(data["company"].get("banner_url"))
             
 
         if banner_path and os.path.exists(banner_path):
@@ -208,7 +194,7 @@ class InvoiceGenerator:
                 banner_para = doc.add_paragraph()
                 banner_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 # Standard: 7" wide x 1.2" tall
-                banner_para.add_run().add_picture(banner_path, width=Inches(7), height=Inches(1.2))
+                add_image_safe(banner_para, banner_path, width=Inches(7), height=Inches(1.2))
                 banner_para.space_after = Pt(6)
             except Exception as e:
                 print(f"Could not add banner: {e}")
@@ -506,14 +492,12 @@ class InvoiceGenerator:
         stamp_cell = sig_table.rows[0].cells[0]
         stamp_para = stamp_cell.paragraphs[0]
         
-        stamp_path = data['company'].get('stamp_url')
-        if stamp_path and stamp_path.startswith("/"):
-            stamp_path = stamp_path.lstrip("/")
+        stamp_path = normalize_file_path(data['company'].get('stamp_url'))
 
         if stamp_path and os.path.exists(stamp_path):
             try:
                 # Standard: 1.3" x 1.3" square
-                stamp_para.add_run().add_picture(stamp_path, width=Inches(1.3), height=Inches(1.3))
+                add_image_safe(stamp_para, stamp_path, width=Inches(1.3), height=Inches(1.3))
             except Exception as e:
                 print(f"Could not add stamp: {str(e)}")
         
@@ -522,14 +506,12 @@ class InvoiceGenerator:
         sig_para = sig_cell.paragraphs[0]
         sig_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         
-        sig_path = data['company'].get('signature_url')
-        if sig_path and sig_path.startswith("/"):
-            sig_path = sig_path.lstrip("/")
+        sig_path = normalize_file_path(data['company'].get('signature_url'))
             
         if sig_path and os.path.exists(sig_path):
             try:
                 # Standard: 2.0" wide x 1.0" tall
-                sig_para.add_run().add_picture(sig_path, width=Inches(2.0), height=Inches(1.0))
+                add_image_safe(sig_para, sig_path, width=Inches(2.0), height=Inches(1.0))
                 sig_para.add_run('\n')
             except Exception as e:
                  print(f"Could not add signature: {str(e)}")
@@ -549,306 +531,6 @@ class InvoiceGenerator:
         closing_run.font.color.rgb = RGBColor(100, 100, 100)
         
         # --- SAVE DOCUMENT ---
-        filename = f"{data['invoice_number']}.docx"
-        file_path = os.path.join(INVOICE_DIR, filename)
+        filename, file_path, url = get_invoice_file_path(data['invoice_number'])
         doc.save(file_path)
-        
-        return f"/static/invoices/{filename}"
-
-
-def generate_invoice(
-    db: Session,
-    company_id: UUID, 
-    client_id: UUID, 
-    candidate_ids: List[UUID], 
-    manual_totals: ManualTotals,
-    invoice_number: str,
-    invoice_date: date,
-    status: str = "DRAFT"
-) -> Invoice:
-    # 0. Validation
-    # Check Invoice Number Uniqueness for this Company
-    existing = db.query(Invoice).filter(
-        Invoice.company_id == company_id,
-        Invoice.invoice_number == invoice_number
-    ).first()
-    if existing:
-        raise ValueError(f"Invoice number '{invoice_number}' already exists.")
-
-    generator = InvoiceGenerator(db)
-    
-    # 1. Aggregate
-    data = generator.prepare_invoice_data(
-        company_id, client_id, candidate_ids, manual_totals, invoice_number, invoice_date
-    )
-    
-    # 2. Generate
-    file_url = generator.generate_docx(data)
-    
-    # 3. Save Record
-    db_invoice = Invoice(
-        invoice_number=invoice_number,
-        invoice_date=invoice_date,
-        company_id=company_id,
-        client_id=client_id,
-        candidate_ids=[str(cid) for cid in candidate_ids],
-        
-        # Store Immutable Snapshot
-        invoice_snapshot=data,
-        
-        # Financials
-        subtotal=manual_totals.subtotal,
-        cgst_rate=manual_totals.cgst_rate,
-        cgst_amount=manual_totals.cgst_amount,
-        sgst_rate=manual_totals.sgst_rate,
-        sgst_amount=manual_totals.sgst_amount,
-        igst_rate=manual_totals.igst_rate,
-        igst_amount=manual_totals.igst_amount,
-        grand_total=manual_totals.grand_total,
-        
-        file_url=file_url,
-        status=status
-    )
-    db.add(db_invoice)
-    db.commit()
-    db.refresh(db_invoice)
-    return db_invoice
-
-def send_invoice(db: Session, invoice: Invoice) -> Invoice:
-    """
-    Mark invoice as SENT.
-    """
-    if invoice.status != "GENERATED":
-        # Theoretically you might allow sending DRAFT which auto-finalizes,
-        # but to keep it strict: must be GENERATED first.
-        # Or maybe re-sending is allowed? 
-        # Requirement: DRAFT -> GENERATED -> SENT.
-        if invoice.status == "SENT":
-            return invoice # Idempotent
-        raise ValueError("Only GENERATED invoices can be marked as SENT. Finalize the draft first.")
-        
-    invoice.status = "SENT"
-    db.commit()
-    db.refresh(invoice)
-    return invoice
-
-def update_invoice(
-    db: Session,
-    invoice: Invoice,
-    candidate_ids: Optional[List[UUID]] = None,
-    manual_totals: Optional[ManualTotals] = None,
-    invoice_date: Optional[date] = None,
-    invoice_number: Optional[str] = None
-) -> Invoice:
-    """
-    Update a DRAFT invoice. Regenerates DOCX and Snapshot.
-    """
-    if invoice.status != "DRAFT":
-        raise ValueError("Only DRAFT invoices can be edited.")
-        
-    # Validation: Unique Invoice Number (if changing)
-    if invoice_number and invoice_number != invoice.invoice_number:
-        existing = db.query(Invoice).filter(
-            Invoice.company_id == invoice.company_id,
-            Invoice.invoice_number == invoice_number
-        ).first()
-        if existing:
-            raise ValueError(f"Invoice number '{invoice_number}' already exists.")
-            
-    # File Cleanup: Delete old DOCX
-    if invoice.file_url:
-        # Assuming file_url is relative like /static/invoices/...
-        # Construct absolute path to delete
-        # We need to be careful with paths. INVOICE_DIR is absolute/relative? 
-        # INVOICE_DIR was defined as "static/invoices" in this file. 
-        # But file_url starts with /static/invoices
-        try:
-             # Strip leading slash if present
-             rel_path = invoice.file_url.lstrip("/")
-             if os.path.exists(rel_path):
-                 os.remove(rel_path)
-             # Also try direct join just in case
-             full_path = os.path.join(os.getcwd(), rel_path)
-             if os.path.exists(full_path):
-                 os.remove(full_path)
-        except Exception as e:
-            print(f"Warning: Could not delete old invoice file: {e}")
-
-    # Prepare new data
-    # Use provided values or fallback to existing
-    # Note: candidate_ids in DB is list of strings, input is list of UUIDs
-    
-    final_candidate_ids = candidate_ids if candidate_ids is not None else [UUID(cid) for cid in invoice.candidate_ids]
-    
-    final_invoice_number = invoice_number if invoice_number else invoice.invoice_number
-    final_invoice_date = invoice_date if invoice_date else invoice.invoice_date
-    
-    # Reconstruct manual_totals if not provided (from DB columns)
-    if manual_totals:
-        final_manual_totals = manual_totals
-    else:
-        final_manual_totals = ManualTotals(
-            subtotal=invoice.subtotal,
-            cgst_rate=invoice.cgst_rate or 0.0,
-            cgst_amount=invoice.cgst_amount,
-            sgst_rate=invoice.sgst_rate or 0.0,
-            sgst_amount=invoice.sgst_amount,
-            igst_rate=invoice.igst_rate or 0.0,
-            igst_amount=invoice.igst_amount,
-            grand_total=invoice.grand_total
-        )
-
-    # Regenerate Data & File
-    generator = InvoiceGenerator(db)
-    data = generator.prepare_invoice_data(
-        company_id=invoice.company_id,
-        client_id=invoice.client_id,
-        candidate_ids=final_candidate_ids,
-        manual_totals=final_manual_totals,
-        invoice_number=final_invoice_number,
-        invoice_date=final_invoice_date
-    )
-    
-    file_url = generator.generate_docx(data)
-    
-    # Update DB Record
-    invoice.invoice_number = final_invoice_number
-    invoice.invoice_date = final_invoice_date
-    invoice.candidate_ids = [str(cid) for cid in final_candidate_ids]
-    invoice.invoice_snapshot = data
-    invoice.file_url = file_url
-    
-    # Update Financials
-    invoice.subtotal = final_manual_totals.subtotal
-    invoice.cgst_rate = final_manual_totals.cgst_rate
-    invoice.cgst_amount = final_manual_totals.cgst_amount
-    invoice.sgst_rate = final_manual_totals.sgst_rate
-    invoice.sgst_amount = final_manual_totals.sgst_amount
-    invoice.igst_rate = final_manual_totals.igst_rate
-    invoice.igst_amount = final_manual_totals.igst_amount
-    invoice.grand_total = final_manual_totals.grand_total
-    
-    db.commit()
-    db.refresh(invoice)
-    return invoice
-
-def finalize_invoice(db: Session, invoice: Invoice) -> Invoice:
-    """
-    Transition invoice from DRAFT to GENERATED.
-    Freezes the snapshot state.
-    """
-    if invoice.status != "DRAFT":
-        raise ValueError("Only DRAFT invoices can be finalized.")
-        
-    invoice.status = "GENERATED"
-    db.commit()
-    db.refresh(invoice)
-    return invoice
-
-def preview_draft_invoice(
-    db: Session,
-    company_id: UUID, 
-    client_id: UUID, 
-    candidate_ids: List[UUID], 
-    manual_totals: ManualTotals,
-    invoice_number: str,
-    invoice_date: date
-) -> Dict[str, Any]:
-    """
-    Generate a preview of the invoice without saving to DB.
-    Returns the data dictionary which includes the file_url (if we generated a temp file).
-    """
-    generator = InvoiceGenerator(db)
-    
-    # 1. Aggregate
-    data = generator.prepare_invoice_data(
-        company_id, client_id, candidate_ids, manual_totals, invoice_number, invoice_date
-    )
-    
-    # 2. Generate Temp File
-    # We use the same generation logic. The file will be created.
-    # Ideally we'd map this to a temp location, but for simplicity/access we use the same dir.
-    # It won't be tracked in DB, so it's "orphaned" until cleaned up or overwritten.
-    file_url = generator.generate_docx(data)
-    
-    # Return data + file_url for frontend preview
-    # We'll attach file_url to the data dict for convenience response
-    response_data = data.copy()
-    response_data["file_url"] = file_url
-    
-    return response_data
-
-def delete_draft_invoice(db: Session, invoice: Invoice):
-    """
-    Delete a DRAFT invoice and its associated file.
-    """
-    if invoice.status != "DRAFT":
-        raise ValueError("Only DRAFT invoices can be deleted.")
-        
-    # File Cleanup
-    if invoice.file_url:
-        try:
-             rel_path = invoice.file_url.lstrip("/")
-             if os.path.exists(rel_path):
-                 os.remove(rel_path)
-             full_path = os.path.join(os.getcwd(), rel_path)
-             if os.path.exists(full_path):
-                 os.remove(full_path)
-        except Exception as e:
-            print(f"Warning: Could not delete invoice file: {e}")
-            
-    db.delete(invoice)
-    db.commit()
-
-def get_latest_invoice_data_by_client_id(db: Session, client_id: UUID, company_id: UUID) -> Optional[Dict[str, Any]]:
-    """
-    Retrieve data for the LATEST invoice generated for a specific client.
-    Prefer returning the stored immutable snapshot.
-    """
-    # Fix: Filter by company_id for multitenant security
-    invoice = db.query(Invoice).filter(
-        Invoice.client_id == client_id,
-        Invoice.company_id == company_id
-    ).order_by(Invoice.invoice_date.desc(), Invoice.id.desc()).first()
-    
-    if not invoice:
-        return None
-
-    # 1. Prefer Snapshot (Fast & Immutable)
-    if invoice.invoice_snapshot:
-        return invoice.invoice_snapshot
-        
-    # 2. Fallback: Reconstruct from live tables (Legacy support)
-    # This is dangerous if data changed, but necessary for old records
-    manual_totals = ManualTotals(
-        subtotal=invoice.subtotal,
-        cgst_rate=invoice.cgst_rate if hasattr(invoice, 'cgst_rate') else 0.0,
-        cgst_amount=invoice.cgst_amount,
-        sgst_rate=invoice.sgst_rate if hasattr(invoice, 'sgst_rate') else 0.0,
-        sgst_amount=invoice.sgst_amount,
-        igst_rate=invoice.igst_rate if hasattr(invoice, 'igst_rate') else 0.0,
-        igst_amount=invoice.igst_amount,
-        grand_total=invoice.grand_total
-    )
-    
-    if invoice.candidate_ids is None:
-        candidate_uuids = []
-    else:
-        if isinstance(invoice.candidate_ids, list):
-             candidate_uuids = [UUID(str(cid)) for cid in invoice.candidate_ids]
-        elif isinstance(invoice.candidate_ids, str):
-             candidate_uuids = [] 
-        else:
-             candidate_uuids = []
-
-    generator = InvoiceGenerator(db)
-    data = generator.prepare_invoice_data(
-        company_id=invoice.company_id,
-        client_id=invoice.client_id,
-        candidate_ids=candidate_uuids,
-        manual_totals=manual_totals,
-        invoice_number=invoice.invoice_number,
-        invoice_date=invoice.invoice_date
-    )
-    
-    return data
+        return url

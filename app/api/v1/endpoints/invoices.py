@@ -12,7 +12,7 @@ from app.models.client import Client
 from app.models.candidate import Candidate
 from app.models.invoice import Invoice
 from app.schemas.invoice import InvoiceGenerateRequest, InvoiceResponse, InvoiceDataResponse, InvoiceUpdate, InvoicePreviewResponse
-from app.services.invoice_service import generate_invoice, update_invoice, finalize_invoice, preview_draft_invoice, delete_draft_invoice, send_invoice
+from app.services.invoice import generate_invoice, update_invoice, finalize_invoice, preview_draft_invoice, delete_draft_invoice, send_invoice
 
 router = APIRouter(prefix="/invoices", tags=["Invoices"])
 
@@ -212,7 +212,7 @@ async def get_client_latest_invoice_data(
     """
     Get detailed data for the client's latest invoice.
     """
-    from app.services.invoice_service import get_latest_invoice_data_by_client_id
+    from app.services.invoice import get_latest_invoice_data_by_client_id
     from app.models.client import Client
     
     # Check client existence and ownership
