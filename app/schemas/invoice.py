@@ -6,9 +6,16 @@ from pydantic import BaseModel, Field
 # --- Manual Totals Schema ---
 class ManualTotals(BaseModel):
     subtotal: float = Field(..., description="Manually entered subtotal")
+    
+    cgst_rate: float = Field(0.0, description="CGST Rate %")
     cgst_amount: float = Field(0.0, description="CGST Amount")
+    
+    sgst_rate: float = Field(0.0, description="SGST Rate %")
     sgst_amount: float = Field(0.0, description="SGST Amount")
+    
+    igst_rate: float = Field(0.0, description="IGST Rate %")
     igst_amount: float = Field(0.0, description="IGST Amount")
+    
     grand_total: float = Field(..., description="Manually entered Grand Total")
 
 # --- Generation Request ---
@@ -18,6 +25,14 @@ class InvoiceGenerateRequest(BaseModel):
     invoice_number: str
     invoice_date: date
     manual_totals: ManualTotals
+    status: Optional[str] = "DRAFT" # DRAFT, GENERATED
+
+# --- Update Request ---
+class InvoiceUpdate(BaseModel):
+    candidate_ids: Optional[List[uuid.UUID]] = None
+    manual_totals: Optional[ManualTotals] = None
+    invoice_date: Optional[date] = None
+    invoice_number: Optional[str] = None
 
 # --- Response ---
 class InvoiceResponse(BaseModel):
@@ -79,3 +94,6 @@ class InvoiceDataResponse(BaseModel):
     columns: List[InvoiceColumnDef]
     line_items: List[Dict[str, Any]] # Using Dict to support dynamic columns easily
     financials: ManualTotals
+
+class InvoicePreviewResponse(InvoiceDataResponse):
+    file_url: str

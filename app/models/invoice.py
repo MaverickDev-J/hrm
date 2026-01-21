@@ -44,9 +44,21 @@ class Invoice(Base):
         nullable=False,
         default=list
     )
+    
+    # Store complete generation payload (Immutable Snapshot)
+    invoice_snapshot: Mapped[Dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=True, # Nullable for backward compatibility
+        default=None
+    )
 
     # Manual Financials (Store exactly what Admin typed)
     subtotal: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False)
+    
+    # Tax Rates (Store exact rates used)
+    cgst_rate: Mapped[float] = mapped_column(Numeric(5, 2), default=0.00, nullable=True)
+    sgst_rate: Mapped[float] = mapped_column(Numeric(5, 2), default=0.00, nullable=True)
+    igst_rate: Mapped[float] = mapped_column(Numeric(5, 2), default=0.00, nullable=True)
     
     # Tax Breakdown (explicitly stored)
     cgst_amount: Mapped[float] = mapped_column(Numeric(15, 2), default=0.00)
@@ -58,6 +70,10 @@ class Invoice(Base):
     # Generated Artifact
     file_url: Mapped[str] = mapped_column(String(512), nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="GENERATED") # DRAFT, GENERATED, SENT
+
+    __table_args__ = (
+        Index('ix_invoices_company_client', 'company_id', 'client_id'),
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
